@@ -5,9 +5,15 @@ projectors. The two projectors are stacked onto each other and two
 small parts of polarizer cut from cheap/thin polarizer glasses are
 taped over the objective lenses of both projectors.
 
+![projecting](projecting.jpg)
+*Stereo image projected with two T20 projectors*
+
 The image can be projected onto any surface that does not destroy
 polarization like e.g. a silver screen or the matte side of a piece of
 aluminum foil.
+
+![stacked](stacked.jpg)
+*Two stacked T20's*
 
 ## UDEV
 
@@ -21,12 +27,8 @@ The viewer serves two purposes. It can be used to test a single or
 both projectors and it allows for benchmarking to verify that the
 refresh rate is sufficient even for both projectors in parallel.
 
-![projecting](projecting.jpg)
-
 Example stereo images can e.g. be taken from
 [StereoPOV](http://stereopov.ichthyostega.de/images.html).
-
-![stacked](stacked.jpg)
 
 The shell scripts in [viewer](viewer) allow to display single images
 or stereo images either from "crossed eye" source or from regular
