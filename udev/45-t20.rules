@@ -1,0 +1,2 @@
+# Aiptek T20
+SUBSYSTEM=="usb", ATTR{idVendor}=="08ca", ATTR{idProduct}=="2137", MODE="0666"
