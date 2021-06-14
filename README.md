@@ -7,6 +7,7 @@ small parts of polarizer cut from cheap/thin polarizer glasses are
 taped over the objective lenses of both projectors.
 
 ![projecting](projecting.jpg)
+
 *Stereo image projected with two T20 projectors*
 
 The image can be projected onto any surface that does not destroy
@@ -14,6 +15,7 @@ polarization like e.g. a silver screen or the matte side of a piece of
 aluminum foil.
 
 ![stacked](stacked.jpg)
+
 *Two stacked T20's*
 
 ## UDEV
