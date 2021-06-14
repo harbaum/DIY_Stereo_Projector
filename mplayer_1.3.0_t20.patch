@@ -1,0 +1,916 @@
+--- mplayer-1.3.0.orig/configure	2021-06-14 16:25:07.000000000 +0200
++++ mplayer-1.3.0/configure	2021-06-14 16:36:20.634440531 +0200
+@@ -495,6 +495,7 @@
+   --enable-fbdev           enable FBDev video output [autodetect]
+   --enable-mlib            enable mediaLib video output (Solaris) [disable]
+   --enable-3dfx            enable obsolete /dev/3dfx video output [disable]
++  --enable-t20             enable T20 video output [autodetect]
+   --enable-tdfxfb          enable tdfxfb video output [disable]
+   --enable-s3fb            enable s3fb (S3 ViRGE) video output [disable]
+   --enable-wii             enable Nintendo Wii/GameCube video output [disable]
+@@ -703,6 +704,7 @@
+ _dxr2=auto
+ _dxr3=auto
+ _ivtv=auto
++_t20=auto
+ _v4l2=auto
+ _iconv=auto
+ _langinfo=auto
+@@ -1081,6 +1083,8 @@
+   --disable-dxr3)       _dxr3=no        ;;
+   --enable-ivtv)        _ivtv=yes       ;;
+   --disable-ivtv)       _ivtv=no        ;;
++  --enable-t20)         _t20=yes        ;;
++  --disable-t20)        _t20=no         ;;
+   --enable-v4l2)        _v4l2=yes       ;;
+   --disable-v4l2)       _v4l2=no        ;;
+   --enable-iconv)       _iconv=yes      ;;
+@@ -5736,6 +5740,27 @@
+ fi
+ echores "$_ivtv"
+ 
++echocheck "T20 USB out"
++if test "$_t20" = auto ; then
++  cat > $TMPC << EOF
++#include <libusb-1.0/libusb.h>
++#include <endian.h>
++int main(void) {
++return 0; }
++EOF
++  _t20=no
++  cc_check && _t20=yes
++fi
++if test "$_t20" = yes ; then
++  def_t20='#define CONFIG_T20 1'
++  vomodules="t20 $vomodules"
++  extra_ldflags="$extra_ldflags -lusb-1.0"
++else
++  def_t20='#undef CONFIG_T20'
++  novomodules="t20 $novomodules"
++fi
++echores "$_t20"
++
+ 
+ echocheck "V4L2 MPEG Decoder"
+ if test "$_v4l2" = auto ; then
+@@ -8446,6 +8471,7 @@
+ HAVE_SYS_MMAN_H = $_mman
+ HAVE_WINDOWS_H = $windows_h
+ IVTV = $_ivtv
++T20 = $_t20
+ JACK = $_jack
+ JOYSTICK = $_joystick
+ JPEG = $_jpeg
+@@ -9068,6 +9094,7 @@
+ $def_gl_osx
+ $def_matrixview
+ $def_ivtv
++$def_t20
+ $def_jpeg
+ $def_kva
+ $def_md5sum
+configure
+--- mplayer-1.3.0.orig/Makefile	2016-01-24 00:34:57.000000000 +0100
++++ mplayer-1.3.0/Makefile	2021-06-14 16:36:29.142609196 +0200
+@@ -510,6 +510,7 @@
+                                 gui/win32/wincfg.c                      \
+ 
+ SRCS_MPLAYER-$(IVTV)         += libao2/ao_ivtv.c libvo/vo_ivtv.c
++SRCS_MPLAYER-$(T20)          += libvo/vo_t20.c
+ SRCS_MPLAYER-$(JACK)         += libao2/ao_jack.c
+ SRCS_MPLAYER-$(JOYSTICK)     += input/joystick.c
+ SRCS_MPLAYER-$(JPEG)         += libvo/vo_jpeg.c
+Makefile
+--- mplayer-1.3.0.orig/libvo/video_out.c	2015-02-27 19:14:02.000000000 +0100
++++ mplayer-1.3.0/libvo/video_out.c	2021-06-14 16:36:34.402713335 +0200
+@@ -110,6 +110,7 @@
+ extern const vo_functions_t video_out_dga;
+ extern const vo_functions_t video_out_sdl;
+ extern const vo_functions_t video_out_3dfx;
++extern const vo_functions_t video_out_t20;
+ extern const vo_functions_t video_out_tdfxfb;
+ extern const vo_functions_t video_out_s3fb;
+ extern const vo_functions_t video_out_wii;
+@@ -195,6 +196,9 @@
+ #ifdef CONFIG_3DFX
+         &video_out_3dfx,
+ #endif
++#ifdef CONFIG_T20
++        &video_out_t20,
++#endif
+ #if CONFIG_VDPAU
+         &video_out_vdpau,
+ #endif
+libvo/video_out.c
+--- mplayer-1.3.0.orig/libvo/vo_t20.h	1970-01-01 01:00:00.000000000 +0100
++++ mplayer-1.3.0/libvo/vo_t20.h	2021-06-14 16:36:07.394177491 +0200
+@@ -0,0 +1,26 @@
++/*
++ * Copyright (C) 2010 Till Harbaum
++ *
++ * This file is part of MPlayer.
++ *
++ * MPlayer is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ *
++ * MPlayer is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with MPlayer; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
++ */
++
++#ifndef MPLAYER_VO_T20_H
++#define MPLAYER_VO_T20_H
++
++int t20_write(const unsigned char *data, int len);
++
++#endif /* MPLAYER_VO_T20_H */
+libvo/vo_t20.h
+--- mplayer-1.3.0.orig/libvo/vo_t20.c	1970-01-01 01:00:00.000000000 +0100
++++ mplayer-1.3.0/libvo/vo_t20.c	2021-06-14 17:20:01.115900294 +0200
+@@ -0,0 +1,778 @@
++/*
++ * Copyright (C) 2010 Till Harbaum
++ *
++ * This file is part of MPlayer.
++ *
++ * MPlayer is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ *
++ * MPlayer is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License along
++ * with MPlayer; if not, write to the Free Software Foundation, Inc.,
++ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
++ */
++
++#include "config.h"
++
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++#include <errno.h>
++#include <sys/types.h>
++#include <sys/stat.h>
++#include <sys/ioctl.h>
++#include <fcntl.h>
++#include <unistd.h>
++#include <stdlib.h>
++#include <inttypes.h>
++#include <linux/types.h>
++#include <linux/videodev2.h>
++#include <linux/ioctl.h>
++
++#include "mp_msg.h"
++#include "subopt-helper.h"
++#include "video_out.h"
++#define NO_DRAW_SLICE
++#include "video_out_internal.h"
++
++#include "vo_t20.h"
++
++#include <libusb-1.0/libusb.h>
++#include <endian.h>
++
++#if __BYTE_ORDER != __LITTLE_ENDIAN
++#warning "Code has only been tested on little endian!"
++#warning "Please report big endian results to till@harbaum.org."
++#define htole24(x) \
++  ((((((x) & 0xff0000) >>  16) | ((x) & 0xff00) | (((x) & 0xff) << 16))
++#else
++#define htole24(x) (x)
++// the following should come from endian.h ... bit it doesn't ...
++#include <bits/byteswap.h>
++#include <bits/uintn-identity.h>
++#define htobe16(x) __bswap_16 (x)
++#define le16toh(x) __uint16_identity (x)
++#define htole32(x) __uint32_identity (x)
++#define htole16(x) __uint16_identity (x)
++#endif
++
++static const opt_t subopts[] = {
++  {NULL, 0, NULL, 0}
++};
++
++static const vo_info_t info =
++{
++  "T20 USB projector",
++  "t20",
++  "Till Harbaum",
++  ""
++};
++const LIBVO_EXTERN (t20)
++
++/* the vendor and product id  */
++#define USB_VID  0x08ca
++#define USB_PID  0x2137
++
++/* buffer holds one complete image */
++#define BUFFER_SIZE  (640*480*3)
++
++/* endpoints being used */
++#define EP_CMDIN     0x81   /* command in */
++#define EP_IMGOUT    0x02   /* image data out */
++#define EP_CMDOUT    0x03   /* command out */
++
++#define TIMEOUT   100   /* 100 ms usb timeout */
++
++/* structures describing the different packet types */
++/* caution, this currently only works on little endian!!! */
++
++/* EP3 command 0x02: write 8 bit register */
++typedef struct {
++  uint8_t cmd;
++  uint16_t length;   // always 1 (big endian!)
++  uint16_t reg;      // register index (big endian!)
++  uint8_t value;     // value to write
++} __attribute__((packed)) write_reg_t;
++
++/* EP3 command 0x04: write byte sequence */
++typedef struct {
++  uint8_t cmd;
++  uint16_t length;   // number of bytes following
++  uint8_t data[0];
++} __attribute__((packed)) write_seq_t;
++
++/* EP3 command 0x05: read 8 bit register */
++typedef struct {
++  uint8_t cmd;
++  uint16_t reg;      // register index
++} __attribute__((packed)) read_reg_t;
++
++typedef struct {
++  uint16_t reg;
++  uint8_t val;
++} __attribute__((packed)) reg_t;
++
++/* EP3 command 0x22: write register sequence */
++typedef struct {
++  uint8_t cmd;
++  uint8_t length;   // number of registers following
++  reg_t data[0];
++} __attribute__((packed)) write_reg_seq_t;
++
++/* EP2 command 0x11: image data */
++typedef struct {
++  uint8_t cmd;
++  uint32_t offset;
++  struct {
++    uint16_t width, height;
++  } src, dest, unknown;
++#if __BYTE_ORDER == __LITTLE_ENDIAN
++  uint32_t flag:8; 
++  uint32_t length:24; 
++#else
++  uint32_t length:24; 
++  uint32_t flag:8; 
++#endif
++} __attribute__((packed)) image_hdr_t;
++
++/* structure holding information necessary to communicate with t20 */
++typedef struct {
++  libusb_device_handle *handle;
++
++  int in_transfer;   // async transfer state
++
++  struct libusb_transfer *hdr_transfer;
++  image_hdr_t hdr;
++  struct libusb_transfer *transfer;
++  char *buffer;
++} t20_dev_t;
++
++static t20_dev_t *devs = NULL;
++static int devices = 0;
++static int vertical = 0;
++
++/* write one byte into a control register. for some odd reason this */
++/* is the only command using big endian encoding */
++int write_reg(libusb_device_handle *handle, uint16_t reg, uint8_t val) {
++  int ret, tr;
++  write_reg_t cmd = { 
++    .cmd=0x02, .length=htobe16(1), .reg=htobe16(reg), .value=val };
++
++  if((ret = libusb_bulk_transfer(handle, EP_CMDOUT, 
++		 (void*)&cmd, sizeof(cmd), &tr, TIMEOUT)) < 0) {
++    mp_msg(MSGT_VO, MSGL_ERR, "USB error write_reg(): %d\n", ret);
++    return -1;								
++  }
++
++  return 0;
++}
++
++/* read one byte from a control register */
++int read_reg(libusb_device_handle *handle, uint16_t reg) {
++  int ret, tr;
++  read_reg_t cmd = { .cmd=0x05, .reg=htole16(reg) };
++  uint8_t val;
++
++  /* write command */
++  if((ret = libusb_bulk_transfer(handle, EP_CMDOUT, 
++		 (void*)&cmd, sizeof(cmd), &tr, TIMEOUT)) < 0) {
++    mp_msg(MSGT_VO, MSGL_ERR, "USB error read_reg() w: %d\n", ret);
++    return -1;								
++  }
++
++  if((ret = libusb_bulk_transfer(handle, EP_CMDIN, 
++				 &val, 1, &tr, TIMEOUT)) < 0) {
++    mp_msg(MSGT_VO, MSGL_ERR, "USB error read_reg() r: %d\n", ret);
++    return -1;								
++  }
++
++  return val;
++}
++
++/* trigger async transmission of image data */
++int write_image_data(t20_dev_t *dev) {
++  int ret;
++
++  if((ret = libusb_submit_transfer(dev->transfer)) < 0) {
++    mp_msg(MSGT_VO, MSGL_ERR, "USB error write_image_data(): %d\n", ret);
++    return -1;
++  }
++
++  return 0;
++} 
++
++
++
++/* copy image to local buffer and write it to the projector */
++int write_image(t20_dev_t *dev) {
++  int ret;
++
++  while(dev->in_transfer) 
++    libusb_handle_events(NULL);
++
++  dev->in_transfer++;
++  if((ret = libusb_submit_transfer(dev->hdr_transfer)) < 0) {
++    mp_msg(MSGT_VO, MSGL_ERR, "USB error write_image_data(): %d\n", ret);
++    return -1;
++  }
++
++  return write_image_data(dev);
++}
++
++int write_seq(libusb_device_handle *handle, const uint8_t *seq, int len) {
++  int ret, tr;
++  write_seq_t *hdr = malloc(sizeof(write_seq_t)+len);
++  if(!hdr) {
++    mp_msg(MSGT_VO, MSGL_ERR, "Out of memory in write_seq()\n");
++    return -1;
++  }
++
++  /* setup header and append payload */
++  hdr->cmd = 0x04;
++  hdr->length = htole16(len);
++  memcpy(hdr->data, seq, len);
++  
++  /* send complete packet */
++  if((ret = libusb_bulk_transfer(handle, EP_CMDOUT, (void*)hdr, 
++		 sizeof(write_seq_t)+len, &tr, TIMEOUT)) < 0) {
++    mp_msg(MSGT_VO, MSGL_ERR, "USB error write_seq(): %d\n", ret);
++    free(hdr);
++    return -1;								
++  }
++
++  free(hdr);
++  return 0;
++}
++
++int write_reg_seq(libusb_device_handle *handle, const reg_t *seq, int len) {
++  int i, ret, tr;
++  write_reg_seq_t *hdr = malloc(sizeof(write_reg_seq_t)+len*sizeof(reg_t));
++  if(!hdr) {
++    mp_msg(MSGT_VO, MSGL_ERR, "Out of memory in write_reg_seq()\n");
++    return -1;
++  }
++  
++  /* setup header and append payload */
++  hdr->cmd = 0x22;
++  hdr->length = len;
++
++  /* register addresses are also big endian here */
++  for(i=0;i<len;i++) {
++    hdr->data[i].reg = htobe16(seq[i].reg);
++    hdr->data[i].val = seq[i].val;
++  }
++  
++  /* send complete packet */
++  if((ret = libusb_bulk_transfer(handle, EP_CMDOUT, (void*)hdr, 
++	 sizeof(write_reg_seq_t)+len*sizeof(reg_t), &tr, TIMEOUT)) < 0) {
++    mp_msg(MSGT_VO, MSGL_ERR, "USB error write_reg_seq(): %d\n", ret);
++    free(hdr);
++    return -1;								
++  }
++
++  free(hdr);
++  return 0;
++}
++
++/* this is a rather odd command as it just sends 768 zero bytes */
++int write_768x0(libusb_device_handle *handle) {
++  int ret, tr;
++  uint8_t cmd[769] = { 0x0a };
++  memset(cmd+1, 0, 768);
++
++  /* write command */
++  if((ret = libusb_bulk_transfer(handle, EP_CMDOUT, 
++		      (void*)cmd, sizeof(cmd), &tr, TIMEOUT)) < 0) {
++    mp_msg(MSGT_VO, MSGL_ERR, "USB error write_768x0(): %d\n", ret);
++    return -1;
++  }
++
++  return 0;
++}
++
++/* fc6c/fc6d seems to be some very basic 16 bit status register */
++/* which is checked and written quite frequently during setup */
++static void check_and_update_status(libusb_device_handle *handle, uint16_t val) {
++  mp_msg(MSGT_VO, MSGL_INFO, "0xfc6c.w: %04x\n", 
++	 (read_reg(handle, 0xfc6c) << 8) | read_reg(handle, 0xfc6d));
++
++  write_reg(handle, 0xfc6c, val>>8);
++  write_reg(handle, 0xfc6d, val&0x0ff);
++}
++
++int t20_init(libusb_device_handle *handle) {
++
++  /* various byte/register sequences downloaded during setup */
++  const uint8_t seq0[] = {
++    0x6a, 0x00, 0x6b, 0x0a,   0x6a, 0x01, 0x6b, 0x0a,
++    0x6a, 0x02, 0x6b, 0x0a,   0x6a, 0x03, 0x6b, 0x0a,
++    0x6a, 0x04, 0x6b, 0x0a,   0x6a, 0x05, 0x6b, 0x0a,
++    0x6a, 0x06, 0x6b, 0x0a,   0x6a, 0x07, 0x6b, 0x0a,
++    0x6a, 0x08, 0x6b, 0x0a,   0x6a, 0x09, 0x6b, 0x0a  };
++
++  const uint8_t seq1[] = {
++    0xf0, 0x04, 0xf1, 0x30,   0xf2, 0x01, 0xf3, 0x05, 
++    0xf4, 0x07, 0xf6, 0x01,   0xf7, 0x03, 0xf5, 0x00,
++    0xa3, 0x60, 0x4b, 0x0f }; 
++
++  const uint8_t seq2[] = {
++    0xa4, 0x37, 0xa3, 0x61,   0xa3, 0x60, 0x28, 0x01, 
++    0x28, 0x00, 0x32, 0x00,   0x59, 0x01, 0x59, 0x00, 
++    0x34, 0x00, 0xc4, 0x7f,   0xc5, 0x02, 0xc6, 0x32,
++    0xc7, 0x34, 0xce, 0x1f,   0xcf, 0x03, 0xc8, 0xdf,
++    0xc9, 0x01, 0xca, 0x0e,   0xcb, 0x0e, 0xcc, 0x0c,
++    0xcd, 0x02 }; 
++
++  const uint8_t seq3[] = {
++    0x40, 0x00, 0x41, 0x40,   0x42, 0x00, 0x43, 0x40,
++    0x36, 0x80, 0x37, 0x02,   0x38, 0xe0, 0x39, 0x01, 
++    0x34, 0x0e }; 
++
++  const reg_t seq4[] = {
++    { 0xfb65, 0x01 }, { 0xfb62, 0x00 }, { 0xfb63, 0x08 }, { 0xfb64, 0x07 }, 
++    { 0xfb65, 0x02 }, { 0xfb62, 0x00 }, { 0xfb63, 0x10 }, { 0xfb64, 0x0e }}; 
++
++  write_seq(handle, seq0, sizeof(seq0));
++
++  mp_msg(MSGT_VO, MSGL_INFO, "0xfc01: %02x\n", read_reg(handle, 0xfc01));
++
++  write_reg(handle, 0xfc6f, 0x00);
++
++  write_768x0(handle);
++
++  check_and_update_status(handle, 0x1001);
++  check_and_update_status(handle, 0x3021);
++
++  write_reg(handle, 0xfce0, 0x3f);
++  write_reg(handle, 0xfce1, 0x00);
++  write_reg(handle, 0xfce2, 0x80);
++
++  //  perform_read_test(handle);
++
++  write_reg(handle, 0xfc28, 0x01);
++  write_reg(handle, 0xfc59, 0x01);
++  write_reg(handle, 0xfc32, 0x00);
++  write_reg(handle, 0xfc34, 0x00);
++  write_reg(handle, 0xfcb0, 0x00);
++  write_reg(handle, 0xfcb0, 0x20);
++  write_reg(handle, 0xfc4b, 0x00);
++  write_reg(handle, 0xfbff, 0x81);
++  
++  write_seq(handle, seq1, sizeof(seq1));
++
++#if 0 // only in latest driver
++  write_reg(handle, 0xfca8, 0x42);
++  write_reg(handle, 0xfca8, 0x40);
++#endif
++
++  write_seq(handle, seq2, sizeof(seq2));
++  write_seq(handle, seq3, sizeof(seq3));
++
++  write_reg_seq(handle, seq4, sizeof(seq4)/sizeof(reg_t));
++
++  write_reg(handle, 0xfc32, 0x00);
++
++  write_reg(handle, 0xfcb4, 0x01);
++  write_reg(handle, 0xfcb1, 0x00);
++  write_reg(handle, 0xfcb2, 0x00);
++  write_reg(handle, 0xfcb3, 0x00);
++
++  write_reg(handle, 0xfb65, 0x11);
++  write_reg(handle, 0xfb60, 0x00);
++
++  write_reg(handle, 0xfcb5, 0x03);
++  write_reg(handle, 0xfcb4, 0x10);
++  write_reg(handle, 0xfb96, 0x11);
++  write_reg(handle, 0xfcb0, 0x09);
++
++  //  write_empty_bw(handle, 640, 480);
++
++  check_and_update_status(handle, 0x3032);
++
++  //  write_empty(handle, 28, 2);
++  //  write_empty(handle, 640, 465);
++
++  write_reg(handle, 0xfcb0, 0x20);
++  write_reg(handle, 0xfc4b, 0x1c);
++  
++  check_and_update_status(handle, 0x3022);
++
++  write_reg(handle, 0xfc28, 0x01);
++  write_reg(handle, 0xfc59, 0x01);
++  write_reg(handle, 0xfc32, 0x00);
++  write_reg(handle, 0xfc34, 0x00);
++  write_reg(handle, 0xfcb0, 0x00);
++  write_reg(handle, 0xfcb0, 0x20);
++  write_reg(handle, 0xfc4b, 0x00);
++  write_reg(handle, 0xfbff, 0x81);
++
++  write_seq(handle, seq1, sizeof(seq1));
++
++#if 0 // only in latest driver
++  write_reg(handle, 0xfca8, 0x42);
++  write_reg(handle, 0xfca8, 0x40);
++#endif
++
++  write_seq(handle, seq2, sizeof(seq2));
++  write_seq(handle, seq3, sizeof(seq3));
++
++  write_reg(handle, 0xfc32, 0x00);
++
++  write_reg_seq(handle, seq4, sizeof(seq4)/sizeof(reg_t));
++
++  write_reg(handle, 0xfcb4, 0x01);
++  write_reg(handle, 0xfcb1, 0x00);
++  write_reg(handle, 0xfcb2, 0x00);
++  write_reg(handle, 0xfcb3, 0x00);
++
++  write_reg(handle, 0xfb65, 0x11);
++  write_reg(handle, 0xfb60, 0x00);
++
++  write_reg(handle, 0xfcb5, 0x03);
++  write_reg(handle, 0xfcb4, 0x10);
++  write_reg(handle, 0xfb96, 0x11);
++  write_reg(handle, 0xfcb0, 0x09);
++
++  //  write_empty_bw(handle, 640, 480);
++
++  check_and_update_status(handle, 0x3032);
++
++  puts("ok");
++
++  return 0;
++}
++
++/* callback invoked by libusb for the header transfer */
++void image_cb(struct libusb_transfer *transfer) {
++  t20_dev_t *dev = (t20_dev_t*)(transfer->user_data);
++  dev->in_transfer--;
++}
++
++void setup_hdr(t20_dev_t *dev, int width, int height) {
++  dev->hdr.cmd = 0x11;
++  dev->hdr.offset = htole32(((480-height)/2)*640*3 + ((640-width)/2)*3);
++  dev->hdr.src.width = dev->hdr.dest.width = htole16(width);
++  dev->hdr.src.height = dev->hdr.dest.height = htole16(height);
++  dev->hdr.unknown.width = htole16(0x4000);
++  dev->hdr.unknown.height = htole16(0x4000);
++  dev->hdr.flag = 0x00;
++  dev->hdr.length = htole24(width*height*3);
++  
++  dev->transfer->length = width*height*3;
++}
++
++/* scan usb subsystem for T20 devices and initialize them all */
++static int find_all_t20(t20_dev_t **devs) {
++  t20_dev_t *dev;
++  libusb_device **usb_devs;
++  int ret, i, devices = 0;
++
++  ssize_t cnt = libusb_get_device_list(NULL, &usb_devs);
++  if (cnt < 0) return 0;
++  
++  *devs = NULL;
++  
++  for(i=0;usb_devs[i]!=NULL;i++) {
++    struct libusb_device_descriptor desc;
++    if(libusb_get_device_descriptor(usb_devs[i], &desc) == 0) {
++      
++      /* try to init all Aiptek T20 connected */
++      if((desc.idVendor == USB_VID) && (desc.idProduct == USB_PID)) {
++	
++	if(devices < 2) {
++	  libusb_device_handle *h;
++	  
++	  mp_msg(MSGT_VO, MSGL_INFO, "Found device on bus %d device %d.\n", 
++		 libusb_get_bus_number(usb_devs[i]), 
++		 libusb_get_device_address(usb_devs[i]));
++	  
++	  /* open device */
++	  if((ret = libusb_open(usb_devs[i], &h)) != 0) 
++	    mp_msg(MSGT_VO, MSGL_ERR, "USB error open(): %d\n", ret);
++	  else {
++	    if ((ret = libusb_set_configuration(h, 1)) != 0) {
++	      mp_msg(MSGT_VO, MSGL_ERR, 
++		     "USB error set_configuration(): %d\n", ret);
++	      libusb_close(h);
++	      break;
++	    }
++	    
++	    if ((ret = libusb_claim_interface(h, 0)) != 0) {
++	      mp_msg(MSGT_VO, MSGL_ERR, 
++		     "USB error claim_interface(): %d\n", ret); 
++	      libusb_close(h);
++	      h = NULL;
++	      break;
++	    }
++	    
++	    t20_init(h);
++	    
++	    /* allocate new entry for device */
++	    *devs = realloc(*devs, (devices+1) * sizeof(t20_dev_t));
++	    dev = *devs + devices;
++	    
++	    /* create video buffer */
++	    dev->buffer = malloc(BUFFER_SIZE);
++	    memset(dev->buffer, 0, BUFFER_SIZE);
++	    
++	    /* create transfer buffers for async io and set them up */
++	    dev->hdr_transfer = libusb_alloc_transfer(0);
++	    libusb_fill_bulk_transfer(dev->hdr_transfer, h, 
++				      EP_IMGOUT, NULL, sizeof(image_hdr_t), 
++				      NULL, NULL, TIMEOUT);
++	    dev->hdr_transfer->flags = LIBUSB_TRANSFER_SHORT_NOT_OK;
++	    
++	    /* create transfer buffer for async io and set it up */
++	    dev->transfer = libusb_alloc_transfer(0);
++	    libusb_fill_bulk_transfer(dev->transfer, h, 
++				      EP_IMGOUT, dev->buffer, BUFFER_SIZE, 
++				      image_cb, NULL, TIMEOUT);
++	    dev->transfer->flags = LIBUSB_TRANSFER_SHORT_NOT_OK;
++	    
++	    /* reset state machine */
++	    dev->in_transfer = 0;
++	    dev->handle = h;
++	    devices++;
++	  }
++	} else 
++	  mp_msg(MSGT_VO, MSGL_INFO, "Only two devices supported!\n");
++      }
++    }
++  }
++  
++  libusb_free_device_list(usb_devs, 1);
++  
++  /* can only set transfer user_data now as realloc() would have changed it */
++  for(i=0;i<devices;i++) {
++    (*devs)[i].hdr_transfer->buffer = (void*)&((*devs)[i].hdr);
++    (*devs)[i].hdr_transfer->user_data = *devs + i;
++    (*devs)[i].transfer->user_data = *devs + i;
++
++    /* setup t20 image header for full screen */
++    setup_hdr(&(*devs)[i], 640, 480);
++    /* send empty frame (erase screen) */
++    write_image(&(*devs)[i]);
++
++    /* wait for transfer to finish to make sure config() changes */
++    /* settings after screen has been cleared. */
++    while((*devs)[i].in_transfer)
++      libusb_handle_events(NULL);
++  }
++  
++  return devices;
++}
++
++void free_t20(t20_dev_t *devs, int devices) {
++  int j;
++
++  for(j=0;j<devices;j++) {
++    /* wait for async transfer callback if still in use */
++    while(devs[j].in_transfer)
++      libusb_handle_events(NULL);
++
++    /* free async transfer itself */
++    libusb_free_transfer(devs[j].transfer);
++
++    /* close connection to device */
++    libusb_close(devs[j].handle);
++
++    /* and free the transfer buffer if present */
++    free(devs[j].buffer);
++  }
++
++  /* free buffer and handle lists */
++  free(devs);
++}
++
++static int
++config (uint32_t width, uint32_t height,
++        uint32_t d_width, uint32_t d_height,
++        uint32_t fullscreen, char *title, uint32_t format)
++{
++  int j;
++
++  mp_msg(MSGT_VO, MSGL_INFO, "t20 config(%dx%d)\n", width, height);
++
++  /* if height > width we can be pretty sure that a 3d video is */
++  /* in "over/under" format instead of side by side. */
++
++  if(height > width) {
++    mp_msg(MSGT_VO, MSGL_INFO, "using vertical split\n");
++    vertical = 1;
++
++    if ((int)width > 640 || (int)height > (480*devices)) {
++      mp_msg(MSGT_VO, MSGL_ERR, 
++	     "input size %dx%d exceeds 640x%d\n", 
++	     width, height, 480*devices);
++      return 1;
++    }
++
++    if (height%devices != 0) {
++      mp_msg(MSGT_VO, MSGL_ERR, 
++	     "input height must be multiple of number of devices "
++	     "to avoid artifacts\n");
++      return 1;
++    }
++    
++    mp_msg(MSGT_VO, MSGL_INFO, 
++	   "configuring %d devices for %dx%d\n", 
++	   devices, width, height/devices);
++    
++    for(j=0;j<devices;j++) 
++      setup_hdr(devs+j, width, height/devices);
++
++  } else {
++    if ((int)width > (640*devices) || (int)height > 480) {
++      mp_msg(MSGT_VO, MSGL_ERR, 
++	     "input size %dx%d exceeds %dx480\n", 
++	     width, height, 640*devices);
++      return 1;
++    }
++
++    if (width%devices != 0) {
++      mp_msg(MSGT_VO, MSGL_ERR, 
++	     "input width must be multiple of number of devices "
++	     "to avoid artifacts\n");
++      return 1;
++    }
++    
++    mp_msg(MSGT_VO, MSGL_INFO, 
++	   "configuring %d devices for %dx%d\n", 
++	   devices, width/devices, height);
++    
++    for(j=0;j<devices;j++) 
++      setup_hdr(devs+j, width/devices, height);
++  }
++
++  return 0;
++}
++
++static int
++preinit (const char *arg)
++{
++  struct v4l2_output vout;
++  int err, ret;
++
++  mp_msg(MSGT_VO, MSGL_INFO, "t20 preinit()\n");
++
++  if((ret = libusb_init(NULL)) < 0) 
++    mp_msg(MSGT_VO, MSGL_ERR, "USB failed to initialise libusb\n");
++  else {
++    /* actually the following code will stop after it found two devices */
++    devices = find_all_t20(&devs);
++  }
++
++  if(!devices) 
++    mp_msg(MSGT_VO, MSGL_FATAL, "No T20 device found!\n");
++  else 
++    mp_msg(MSGT_VO, MSGL_INFO, "%d T20 device(s) found!\n", devices);
++  
++  return devices?0:VO_NOTAVAIL;
++}
++
++static void
++draw_osd (void)
++{
++  /* do nothing */
++}
++
++static int
++draw_frame (uint8_t * src[])
++{
++  int j;
++  uint8_t *s_ptr = src[0];
++
++  if(!devices) return VO_NOTAVAIL;
++
++  /* copy data into buffer for async transmission */
++
++  if(vertical) {
++    /* splitting the video vertically is actually pretty simple */
++    for(j=0;j<devices;j++) {
++      memcpy(devs[j].buffer, s_ptr, devs[j].transfer->length);
++      s_ptr += devs[j].transfer->length;
++    }
++  } else {
++    /* splitting the video horizontally is more complex */
++    uint8_t *d_ptr[devices];
++    int len[devices];
++
++    /* determive total number of bytes to process */
++    uint32_t bytes2copy = 0;
++    for(j=0;j<devices;j++) {
++      bytes2copy += devs[j].transfer->length;
++      
++      d_ptr[j] = devs[j].buffer;
++      len[j] = le16toh(devs[j].hdr.src.width) * 3;
++    }
++    
++    /* distribute data equally over buffers */
++    while(bytes2copy) {
++      for(j=0;j<devices;j++) {
++	memcpy(d_ptr[j], s_ptr, len[j]);
++	d_ptr[j] += len[j];
++	s_ptr += len[j];
++	bytes2copy -= len[j];
++      }
++    }
++  }
++
++  /* finally send all images to the projectors */
++  printf("send %d   \n", devices);
++  for(j=0;j<devices;j++) 
++    write_image(&devs[j]);
++
++  return 0;
++}
++
++static void
++flip_page (void)
++{
++}
++
++static void
++uninit (void)
++{
++  mp_msg(MSGT_VO, MSGL_INFO, "t20 uninit()\n");
++
++  /* close connection to all devices and free video buffer */
++  free_t20(devs, devices);
++  devices = 0;
++  
++  /* and release libusb */
++  libusb_exit(NULL);
++}
++
++static void
++check_events (void)
++{
++  /* do nothing */
++}
++
++static int
++query_format (uint32_t format)
++{
++  if (format != IMGFMT_BGR24)
++    return 0;
++
++  return VFCAP_CSP_SUPPORTED;
++}
++
++static int
++control (uint32_t request, void *data)
++{
++
++  switch (request)
++  {
++  case VOCTRL_QUERY_FORMAT:
++    return query_format (*((uint32_t*) data));
++  }
++
++  return VO_NOTIMPL;
++}
+libvo/vo_t20.c
