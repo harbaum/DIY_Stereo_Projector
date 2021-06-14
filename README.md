@@ -1,4 +1,5 @@
-# DIY USB stereo image projector based on Aiptek T20 
+# DIY stereo image projector
+## based on two Aiptek T20 USB projectors
 
 This is a simple 3d projector based on two small Aiptek T20 USB
 projectors. The two projectors are stacked onto each other and two
