@@ -60,3 +60,34 @@ Running 250 frame performance test ... 5.36s
 Bytes/sec = 85986191 (656 mbit/s)
   => 46.650494 frames/sec
 ```
+
+## Mplayer
+
+Also available is a patch against mplayer-1.3.0. This adds an output
+driver for the T20 to mplayer. If more than one T20 is detected, then
+a stereo mode is activated and the video to be replayed is expected to
+be stereoscopic, either side-by-side vertically or horizontally. The
+t20 driver tries to figure out automatically which alignments the
+images have.
+
+On a ubuntu system a matching mplayer can be built like so:
+
+```
+apt-get source mplayer
+sudo apt-get build-dep mplayer
+cd mplayer-1.3.0
+patch -p1 <../mplayer_1.3.0_t20.patch
+dpkg-buildpackage -rfakeroot -uc -b
+```
+
+This will build debian packages installable on your system.
+
+Example vidoes can e.g. be found
+[here](https://www.3dtv.at/Movies/). Videos should be scaled to the
+projector size of 640x480. So the [3D Film Peschke Macroshow
+09](https://www.3dtv.at/Movies/Macroshow_en.aspx) can be replayed
+using the command:
+
+```
+mplayer -vo t20 -vf scale=640:-2 Peschke\ Macroshow\ 576p\ \(Wide\).wmv
+```
