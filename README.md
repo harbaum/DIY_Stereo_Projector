@@ -1,5 +1,5 @@
-# DIY stereo image projector
-## based on two Aiptek T20 USB projectors
+# DIY stereo image and movie projector
+## Built of two Aiptek T20 USB projectors
 
 This is a simple 3d projector based on two small Aiptek T20 USB
 projectors. The two projectors are stacked onto each other and two
@@ -18,7 +18,7 @@ aluminum foil.
 
 *Two stacked T20's*
 
-## UDEV
+## Linux udev rules
 
 To give regular applications the permissions to connect to the
 T20's via USB a udev rule file is provided [here](udev/45-t20.rules).
@@ -97,3 +97,33 @@ And the [3d version of big buck bunny](https://mirrors.kodi.tv/demo-files/BBB/bb
 ```
 mplayer -vo t20 -vf scale=640:-2 bbb_sunflower_1080p_60fps_stereo_abl.mp4
 ```
+
+## Screen
+
+The screen must be a silver screen to keep the polarization intact.
+A piece of aluminum foil works well.
+
+![aluminum](aluminum.jpg)
+
+*Projecting onto the matte aluminum foil side*
+
+## Glasses
+
+A pair of cheap polarizer glasses is sufficient.
+
+![through_glasses](through_glasses.jpg)
+
+*View through a pair of polarizer glasses*
+
+A second pair aof glasses is being cut to get two little polarizer
+pieces which are mounted in front of the projector lenses.
+
+![filters](filters.jpg)
+
+*A pair of glasses has been cut for the lens filters*
+
+The small pieces are held in place with some sticky tape in from
+of the lenses. Some more tape is used to stack the two projectors.
+
+![stacked2](stacked2.jpg)
+
