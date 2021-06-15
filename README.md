@@ -91,3 +91,9 @@ using the command:
 ```
 mplayer -vo t20 -vf scale=640:-2 Peschke\ Macroshow\ 576p\ \(Wide\).wmv
 ```
+
+And the [3d version of big buck bunny](https://mirrors.kodi.tv/demo-files/BBB/bbb_sunflower_1080p_60fps_stereo_abl.mp4) using this command:
+
+```
+mplayer -vo t20 -vf scale=640:-2 bbb_sunflower_1080p_60fps_stereo_abl.mp4
+```
